@@ -1,0 +1,123 @@
+{% extends 'base.html' %}{% block body %}
+<div class="closing-head">
+  <div class="day-tabs">
+    {% for d in days %}<a class="day-tab {{'active' if d==selected else ''}}" href="/closing?day={{d}}">{{d}}</a>{% endfor %}
+  </div>
+  <form class="policy-switch" method="get" action="/closing">
+    <input type="hidden" name="day" value="{{selected}}">
+    <label><input type="radio" name="policy" value="verifiable" {{'checked' if policy!='hold' else ''}} onchange="this.form.submit()"> 可证实分钟发布</label>
+    <label><input type="radio" name="policy" value="hold" {{'checked' if policy=='hold' else ''}} onchange="this.form.submit()"> 留旧账等补齐</label>
+  </form>
+</div>
+{% if notice %}<div class="warning">{{notice}}</div>{% endif %}
+{% if review %}
+<div class="closing-grid">
+  <section class="panel ledger-panel">
+    <div class="panel-head"><h2>正式账 / 当前有效版本</h2>
+      <span>{{'v' ~ review.official.version if review.official else '未发布'}}</span></div>
+    <div class="panel-body">
+      {% if review.official %}
+      <div class="ledger-kpis">
+        <div><label>可证实分钟</label><b>{{review.official.totals.covered_minutes}}</b></div>
+        <div><label>超温分钟</label><b>{{review.official.totals.excess_minutes}}</b></div>
+        <div><label>热暴露 °C·min</label><b>{{review.official.totals.degree_minutes}}</b></div>
+        <div><label>未知分钟</label><b class="muted">{{review.official.totals.unknown_minutes}}</b></div>
+        <div><label>未覆盖分钟</label><b class="warn">{{review.official.totals.uncovered_minutes}}</b></div>
+      </div>
+      <dl><dt>业务日窗口</dt><dd>{{review.official.window.start}} → {{review.official.window.end}}</dd>
+        <dt>关账截止</dt><dd>{{review.official.window.cutoff}}</dd>
+        <dt>口径</dt><dd>{{review.official.policy_label}}</dd>
+        <dt>来源批次</dt><dd class="digest">{{review.official.run_id}}</dd></dl>
+      {% else %}<div class="empty">该业务日尚未发布正式账。下方预演结果与发布使用同一构建函数。</div>{% endif %}
+    </div>
+  </section>
+
+  <section class="panel draft-panel">
+    <div class="panel-head"><h2>预演 / 待发布</h2><span>{{review.draft.policy_label}}</span></div>
+    <div class="panel-body">
+      <div class="ledger-kpis">
+        <div><label>可证实分钟</label><b>{{review.draft.totals.covered_minutes}}</b></div>
+        <div><label>超温分钟</label><b>{{review.draft.totals.excess_minutes}}</b></div>
+        <div><label>热暴露 °C·min</label><b>{{review.draft.totals.degree_minutes}}</b></div>
+        <div><label>未知分钟</label><b class="muted">{{review.draft.totals.unknown_minutes}}</b></div>
+        <div><label>未覆盖分钟</label><b class="warn">{{review.draft.totals.uncovered_minutes}}</b></div>
+      </div>
+      <div class="state-line">
+        <span class="state {{'ok' if review.draft.state=='可归档' else 'hold'}}">{{review.draft.state}}</span>
+        <span>迟到交接待补 {{review.draft.pending_minutes}} min</span>
+        <span>{{'账本自洽' if review.draft.checks.balanced else '账本不平'}}</span>
+      </div>
+      {% if review.draft.blockers %}<div class="blockers">{% for b in review.draft.blockers %}<div class="warning">{{b.code}} · {{b.detail}}</div>{% endfor %}</div>{% endif %}
+      <div class="publish-actions">
+        <button id="publish" class="btn primary" data-day="{{selected}}" data-policy="{{review.draft.policy}}" {{'disabled' if review.draft.blockers or review.draft.matches_official}}>发布{{review.draft.policy_label}}</button>
+        <button id="restore" class="btn" data-day="{{selected}}" data-version="{{review.previous_version or ''}}" {{'disabled' if not review.previous_version}}>恢复上一版</button>
+        <span class="hint">{{'当前预演与正式账一致，重复发布不会新增版本。' if review.draft.matches_official else '同一关账重试复用同一版本，不重复生成责任分钟。'}}</span>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="closing-grid wide">
+  <section class="panel">
+    <div class="panel-head"><h2>每批责任分钟</h2><span>责任分钟 / 热暴露 / 未覆盖</span></div>
+    <div class="panel-body scroll">
+      <table class="ledger-table"><thead><tr><th>批号</th><th>责任方</th><th>覆盖</th><th>正常</th><th>超温</th><th>°C·min</th><th>未知</th><th>未覆盖</th><th>变化</th></tr></thead>
+        <tbody>{% for batch in review.draft.batches %}{% set change = (review.changes.batches|selectattr('shipment','equalto',batch.shipment)|first) if review.changes.from_version else None %}
+          {% for owner in batch.owners %}<tr><td>{{batch.shipment if loop.first else ''}}</td><td>{{owner.owner}}</td><td class="num">{{owner.coverage_minutes}}</td><td class="num">{{owner.normal_minutes}}</td><td class="num hot">{{owner.excess_minutes}}</td><td class="num">{{owner.degree_minutes}}</td><td class="num muted">{{owner.unknown_minutes}}</td><td class="num warn">{{batch.uncovered_minutes if loop.first else ''}}</td><td>{% if loop.first and change %}<span class="delta {{change.status}}">{{change.status}}</span>{% endif %}</td></tr>
+          {% else %}<tr><td>{{batch.shipment}}</td><td>—</td><td class="num">0.000000</td><td class="num">0.000000</td><td class="num hot">0.000000</td><td class="num">0.000000</td><td class="num muted">{{batch.unknown_minutes}}</td><td class="num warn">{{batch.uncovered_minutes}}</td><td>{% if change %}<span class="delta {{change.status}}">{{change.status}}</span>{% endif %}</td></tr>{% endfor %}
+        {% endfor %}</tbody></table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>与上一版差异</h2><span>{% if review.changes.from_version %}v{{review.changes.from_version}} → 预演{% else %}首版{% endif %}</span></div>
+    <div class="panel-body scroll"><table><thead><tr><th>批号</th><th>可证实</th><th>超温</th><th>°C·min</th><th>未知</th><th>未覆盖</th></tr></thead>
+      <tbody>
+      {% if not review.changes.from_version %}<tr><td colspan="6" class="empty">尚无正式账，发布后版本差异将显示在这里</td></tr>
+      {% else %}{% for row in review.changes.batches %}{% if row.status!='same' %}<tr><td>{{row.shipment}}</td><td class="num">{{row.delta.covered_minutes}}</td><td class="num">{{row.delta.excess_minutes}}</td><td class="num">{{row.delta.degree_minutes}}</td><td class="num muted">{{row.delta.unknown_minutes}}</td><td class="num warn">{{row.delta.uncovered_minutes}}</td></tr>{% endif %}{% endfor %}
+      {% if not review.changes.changed %}<tr><td colspan="6" class="empty">与当前有效版一致</td></tr>{% endif %}{% endif %}
+      </tbody></table></div>
+  </section>
+</div>
+
+<div class="closing-grid wide">
+  <section class="panel">
+    <div class="panel-head"><h2>未覆盖时段</h2><span>{{review.uncovered|length}} 段</span></div>
+    <div class="panel-body scroll"><table><thead><tr><th>批号</th><th>开始</th><th>结束</th><th>分钟</th><th>原因</th><th>迟到责任方</th></tr></thead>
+      <tbody>{% for s in review.uncovered %}<tr><td>{{s.shipment}}</td><td>{{s.start}}</td><td>{{s.end}}</td><td class="num">{{s.minutes}}</td><td class="warn">{{s.reason_label}}</td><td>{{s.late_owner or '—'}}</td></tr>{% else %}<tr><td colspan="6" class="empty">无未覆盖时段</td></tr>{% endfor %}</tbody></table></div>
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>未覆盖与缺测分钟</h2><span>不计入任一方</span></div>
+    <div class="panel-body">
+      <div class="bar-label"><span>可证实</span><b>{{review.draft.totals.covered_minutes}}</b></div>
+      <div class="bar-track"><div class="bar" style="width:{{review.draft.totals.covered_minutes|float / ([review.draft.totals.span_minutes|float,1]|max) *100}}%"></div></div>
+      <div class="bar-label"><span>缺测未知</span><b>{{review.draft.totals.unknown_minutes}}</b></div>
+      <div class="bar-track"><div class="bar unknown" style="width:{{review.draft.totals.unknown_minutes|float / ([review.draft.totals.span_minutes|float,1]|max) *100}}%"></div></div>
+      <div class="bar-label"><span>未覆盖</span><b>{{review.draft.totals.uncovered_minutes}}</b></div>
+      <div class="bar-track"><div class="bar uncovered" style="width:{{review.draft.totals.uncovered_minutes|float / ([review.draft.totals.span_minutes|float,1]|max) *100}}%"></div></div>
+      <dl class="consistency"><dt>同口径校验</dt><dd>{{'一致' if review.consistency.same_caliber else ('未发布' if review.consistency.same_caliber is none else '不一致')}}</dd>
+        <dt>分钟差</dt><dd>{{review.draft.checks.minute_delta}}</dd><dt>责任积分差</dt><dd>{{review.draft.checks.owner_excess_delta}}</dd></dl>
+    </div>
+  </section>
+</div>
+
+<div class="closing-grid wide">
+  <section class="panel">
+    <div class="panel-head"><h2>缺测未知时段</h2><span>{{review.unknown|length}} 段 · 不插值</span></div>
+    <div class="panel-body scroll"><table><thead><tr><th>批号</th><th>责任方</th><th>开始</th><th>结束</th><th>分钟</th><th>原因</th></tr></thead>
+      <tbody>{% for s in review.unknown %}<tr><td>{{s.shipment}}</td><td>{{s.owner}}</td><td>{{s.start}}</td><td>{{s.end}}</td><td class="num">{{s.minutes}}</td><td class="muted">{{s.reason_label}}</td></tr>{% else %}<tr><td colspan="6" class="empty">无缺测时段</td></tr>{% endfor %}</tbody></table></div>
+  </section>
+  <section class="panel">
+    <div class="panel-head"><h2>迟到交接</h2><span>{{review.late_handovers|length}} 条</span></div>
+    <div class="panel-body scroll"><table><thead><tr><th>批号</th><th>责任方</th><th>区间</th><th>收到时间</th><th>参与归属</th></tr></thead>
+      <tbody>{% for h in review.late_handovers %}<tr><td>{{h.shipment}}</td><td>{{h.owner}}</td><td>{{h.start}} → {{h.end}}</td><td class="warn">{{h.received_at}}</td><td>{{'是' if h.used_for_attribution else '否'}}</td></tr>{% else %}<tr><td colspan="5" class="empty">无迟到交接</td></tr>{% endfor %}</tbody></table></div>
+  </section>
+</div>
+
+<section class="panel versions">
+  <div class="panel-head"><h2>账本版本</h2><span>{{review.versions|length}} 版</span></div>
+  <div class="panel-body scroll"><table><thead><tr><th>版本</th><th>生成</th><th>口径</th><th>批次</th><th>状态</th><th>确认</th><th></th></tr></thead>
+    <tbody>{% for v in review.versions %}<tr><td class="num">v{{v.version}}</td><td>{{v.created}}</td><td>{{'可证实' if v.policy=='verifiable' else '留旧账'}}</td><td class="digest">{{v.run_id}}</td><td>{{'有效' if v.active else '历史'}}</td><td>{% set c = review.confirmations|selectattr('version','equalto',v.version)|first %}{{c.confirmed_at if c else '—'}}</td><td>{% if v.active %}<button class="btn confirm" data-day="{{selected}}" data-version="{{v.version}}" data-note="">确认</button>{% elif not v.active %}<button class="btn restore-version" data-day="{{selected}}" data-version="{{v.version}}">恢复</button>{% endif %}</td></tr>{% else %}<tr><td colspan="7" class="empty">尚无账本版本</td></tr>{% endfor %}</tbody></table></div>
+</section>
+{% else %}<div class="empty">尚无可用批次，先在任意页面运行一次样例。</div>{% endif %}
+{% endblock %}

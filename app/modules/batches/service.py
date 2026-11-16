@@ -1,7 +1,7 @@
 from app import store
 from app.modules.batches.review import validate_review
 
-def persist(bundle):return store.save(bundle)
+def persist(bundle,raw=None):return store.save(bundle,raw)
 def approve(rid,version):
     bundle=store.latest()
     if not bundle or bundle['manifest']['run_id']!=rid:
